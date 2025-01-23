@@ -1,0 +1,15 @@
+# Use root/example as user/password credentials
+version: '3.1'
+
+services:
+  python:
+    build: .
+    image: heidaralavi/chat_with_pdf
+    container_name: chat_with_pdf
+    restart: always
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
+    volumes:
+      # Update this to wherever you want VS Code to mount the folder of your project
+      - ..:/app
+    command: sleep infinity
