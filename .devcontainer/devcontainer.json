@@ -6,7 +6,7 @@
 		"docker-compose.yml"
 		],
 	"service": "python",
-	"forwardPorts": [8888],
+	"forwardPorts": [11434,8888,8000],
 	"workspaceFolder": "/app",
 	"customizations": {
 		"vscode": {
