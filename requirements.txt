@@ -1,0 +1,7 @@
+python-dotenv
+requests
+pymupdf
+python-bidi
+arabic-reshaper
+langchain-community
+faiss-cpu

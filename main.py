@@ -1,74 +1,88 @@
-from langchain_community.document_loaders import UnstructuredPDFLoader
-#from IPython.display import display as Markdown
-from tqdm.autonotebook import tqdm as notebook_tqdm
-from langchain_ollama import OllamaEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
-from langchain.prompts import ChatPromptTemplate, PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_ollama.chat_models import ChatOllama
-from langchain_core.runnables import RunnablePassthrough
-from langchain.retrievers.multi_query import MultiQueryRetriever
+# Install required packages
+# pip install python-dotenv requests pymupdf python-bidi arabic-reshaper
 
+import os
+import requests
+from dotenv import load_dotenv
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from bidi.algorithm import get_display
+import arabic_reshaper
+from langchain_community.vectorstores import FAISS
+from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
+from langchain_community.document_loaders import PyMuPDFLoader
 
-#import nltk
-#nltk.download('punkt_tab')
-#nltk.download('averaged_perceptron_tagger_eng')
+# Load environment variables
+load_dotenv()
 
-local_path = "./pdf/test.pdf"
+# Configuration
+class Config:
+    HF_API_TOKEN = os.getenv("HF_API_TOKEN")
+    EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+    QA_MODEL = "HooshvareLab/bert-fa-base-uncased"
+    PDF_PATH = "example.pdf"
 
-# Local PDF file uploads
-if local_path:
-  loader = UnstructuredPDFLoader(file_path=local_path)
-  data = loader.load()
-else:
-  print("Upload a PDF file")
+# Persian text formatting
+def format_persian(text):
+    reshaped = arabic_reshaper.reshape(text)
+    #print(get_display(reshaped))
+    return get_display(reshaped)
 
-#print(data[0].page_content)
+# PDF processing pipeline
+class PersianPDFChatter:
+    def __init__(self):
+        self.embeddings = HuggingFaceInferenceAPIEmbeddings(
+            api_key=Config.HF_API_TOKEN,
+            model_name=Config.EMBEDDING_MODEL
+        )
+        
+        # Load and process PDF
+        loader = PyMuPDFLoader(Config.PDF_PATH)
+        documents = loader.load()
+        print(documents)
+        
+        # Persian-optimized text splitting
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=500,
+            chunk_overlap=100,
+            separators=["\n\n", "\n", "۔", "؟", "!", " "]
+        )
+        self.texts = self.text_splitter.split_documents(documents)
+        
+        # Create vector store
+        self.vectorstore = FAISS.from_documents(self.texts, self.embeddings)
+    
+    def ask_question(self, question):
+        # Find relevant context
+        docs = self.vectorstore.similarity_search(format_persian(question), k=3)
+        context = "\n".join([doc.page_content for doc in docs])
+        print(context)
+        # Query HF API
+        response = requests.post(
+            f"https://api-inference.huggingface.co/models/{Config.QA_MODEL}",
+            headers={"Authorization": f"Bearer {Config.HF_API_TOKEN}"},
+            json={
+                "inputs": {
+                    "question": format_persian(question),
+                    "context": format_persian(context)
+                }
+            }
+        )
+        #print(response.json())
+        return response.json().get('answer', format_persian("پاسخی یافت نشد"))
 
-text_splitter = RecursiveCharacterTextSplitter(chunk_size=7500, chunk_overlap=100)
-chunks = text_splitter.split_documents(data)
+# Chat interface
+def main():
+    chatter = PersianPDFChatter()
+    
+    print(format_persian("خوش آمدید! برای خروج 'خروج' تایپ کنید"))
+    
+    while True:
+        question = input(format_persian("\nسوال شما: "))
+        if question.strip().lower() == format_persian('خروج'):
+            break
+            
+        answer = chatter.ask_question(question)
+        print(format_persian(f"\nپاسخ: {answer}"))
 
-
-vector_db = Chroma.from_documents(
-    documents=chunks,
-    embedding=OllamaEmbeddings(model="nomic-embed-text"),
-    collection_name="local-rag"
-)
-
-local_model = "llama3.2"
-llm = ChatOllama(model=local_model)
-
-QUERY_PROMPT = PromptTemplate(
-    input_variables=["question"],
-    template="""You are an AI language model assistant. Your task is to generate five
-    different versions of the given user question to retrieve relevant documents from
-    a vector database. By generating multiple perspectives on the user question, your
-    goal is to help the user overcome some of the limitations of the distance-based
-    similarity search. Provide these alternative questions separated by newlines.
-    Original question: {question}""",
-)
-
-
-retriever = MultiQueryRetriever.from_llm(
-    vector_db.as_retriever(), 
-    llm,
-    prompt=QUERY_PROMPT
-)
-
-# RAG prompt
-template = """Answer the question based ONLY on the following context:
-{context}
-Question: {question}
-"""
-
-prompt = ChatPromptTemplate.from_template(template)
-
-chain = (
-    {"context": retriever, "question": RunnablePassthrough()}
-    | prompt
-    | llm
-    | StrOutputParser()
-)
-
-chain.invoke("What are the 5 pillars of global cooperation?")
+if __name__ == "__main__":
+    main()
