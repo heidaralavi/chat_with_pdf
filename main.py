@@ -16,7 +16,7 @@ load_dotenv()
 
 # Configuration
 class Config:
-    HF_API_TOKEN = os.getenv("HF_API_TOKEN")
+    HF_API_TOKEN = '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'
     EMBEDDING_MODEL = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
     QA_MODEL = "HooshvareLab/bert-fa-base-uncased"
     PDF_PATH = "example.pdf"
