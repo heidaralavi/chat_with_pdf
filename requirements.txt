@@ -5,3 +5,4 @@ python-bidi
 arabic-reshaper
 langchain-community
 faiss-cpu
+pdfplumber

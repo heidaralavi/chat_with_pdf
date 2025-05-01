@@ -10,6 +10,10 @@ import arabic_reshaper
 from langchain_community.vectorstores import FAISS
 from langchain_community.embeddings import HuggingFaceInferenceAPIEmbeddings
 from langchain_community.document_loaders import PyMuPDFLoader
+import pymupdf
+from arabic_reshaper import reshape
+import pdfplumber
+
 
 # Configuration
 class Config:
@@ -19,20 +23,30 @@ class Config:
     PDF_PATH = "example.pdf"
 
 
-# Load and process PDF
-loader = PyMuPDFLoader(Config.PDF_PATH)
-documents = loader.load()
-#reshaped = arabic_reshaper.reshape(pages[0].page_content)
+def extract_text_from_pdf(pdf_path):
+    text = ""
+    with pdfplumber.open(pdf_path) as pdf:
+        for page in pdf.pages:
+            # Extract text and handle encoding
+            page_text = page.extract_text()
+            if page_text:
+                text += reshape(page_text) 
+    return text
 
-# Persian-optimized text splitting
+pdf_text = extract_text_from_pdf(Config.PDF_PATH)
+#print(pdf_text)
+
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=500,
-    chunk_overlap=100,
-    separators=["\n\n", "\n", "۔", "؟", "!", " "]
+    chunk_overlap=5,
+    separators=['\n']         #"\n\n", "\n", "۔", "؟", "!", " "]
     )
-texts = text_splitter.split_documents(documents)
 
-#print(get_display(texts[0].page_content))
+texts = text_splitter.split_text(pdf_text)
+
+print(len(texts))
+#rtl_text = get_display(reshaped_text)
+
 
 embeddings = HuggingFaceInferenceAPIEmbeddings(
             api_key=Config.HF_API_TOKEN,
@@ -40,29 +54,15 @@ embeddings = HuggingFaceInferenceAPIEmbeddings(
         )
 
 
-vectorstore = FAISS.from_documents(texts, embeddings)
+vectorstore = FAISS.from_texts(texts, embeddings)
 
-#print(vectorstore)
-question = 'نام کهکشان چیست'
+question = reshape('آکواریوم خاطرات کجا است')
 
-docs = vectorstore.similarity_search('نام کهکشان چیست', k=3)
+#docs = vectorstore.similarity_search(question, k=3)
+docs = vectorstore.similarity_search_with_score(question, k=3)
 
-#print([get_display(doc.page_content) for doc in docs])
-context = [get_display(doc.page_content).replace('\n','') for doc in docs]
-print(type(context))
-tt = arabic_reshaper.reshape(context[0])
-response = requests.post(
-            f"https://api-inference.huggingface.co/models/{Config.QA_MODEL}",
-            headers={"Authorization": f"Bearer {Config.HF_API_TOKEN}"},
-            json={
-                "inputs": {
-                    "question": 'دوستان چه ',
-                    "context": 'سلام دوستان حال شما چطور است'
-                }
-            }
-        )
+print(len(docs))
 
-print(response.json())
 
-#reshaped = arabic_reshaper.reshape(texts[0])
-#print(reshaped)
+#print(docs[0][0], docs[0][1])
+print(docs[1][0], docs[1][1])
